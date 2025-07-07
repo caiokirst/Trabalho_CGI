@@ -5,18 +5,6 @@ import numpy as np
 from configs import KNOWN_COLORS_BGR, S_MIN_FILTER_COLOR_ANALYSIS, V_MIN_FILTER_COLOR_ANALYSIS
 
 def get_car_color(roi):
-    """
-    Determina a cor dominante em uma Região de Interesse (ROI) de um carro.
-    Primeiro, filtra pixels de vidro/sombra. Em seguida, usa K-Means Clustering 
-    e compara a cor dominante com uma paleta de cores BGR conhecidas.
-
-    Args:
-        roi (numpy.ndarray): A imagem recortada da Região de Interesse (ROI) do carro (em formato BGR).
-
-    Returns:
-        str: O nome da cor detectada (ex: "Branco", "Preto", "Azul", "Desconhecida", "N/A").
-             Retorna "N/A" se a ROI for inválida ou muito pequena para processamento.
-    """
     # 1. Validação da ROI de entrada.
     if roi is None or roi.size == 0 or roi.shape[0] < 5 or roi.shape[1] < 5:
         return "N/A"
@@ -93,7 +81,7 @@ def get_car_color(roi):
     # 7. Classificação Final Baseada na Distância e Limiar de Tolerância.
     # Este limiar define quão "próxima" a cor dominante do carro precisa estar
     # de uma cor na sua paleta para não ser classificada como "Desconhecida".
-    if min_distance > 30: # Se a cor dominante está muito longe de qualquer cor conhecida na sua paleta.
+    if min_distance > 25: # Se a cor dominante está muito longe de qualquer cor conhecida na sua paleta.
         return "Desconhecida"
 
     return detected_color_name
