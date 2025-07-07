@@ -26,11 +26,11 @@ V_MIN_FILTER_COLOR_ANALYSIS = 80 # Brilho mínimo para análise de cor (era 80)
 
 
 KNOWN_COLORS_BGR = {
-    "Branco": (97, 91, 91),  
-    "Preto": (113, 115, 115),      # <-- Ajustado para o valor real do carro preto!
-    "Cinza": (110, 97, 95),   
-    "Vermelho": (84, 97, 114),
-    "Azul": (115, 99, 95),      
+    "Branco": (109, 97, 100),
+    "Preto": (122, 120, 128),      # <-- Ajustado para o valor real do carro preto!
+    "Cinza": (111, 95, 91),   
+    "Vermelho": (86, 86, 110),
+    "Azul": (112, 97, 92),      
 }
 
 # --- Pré-processamento de Imagem ---
@@ -42,18 +42,18 @@ CANNY_THRESHOLD1 = 30
 CANNY_THRESHOLD2 = 60
 
 # --- Fechamento de Bordas (Morph Close) ---
-CLOSE_KERNEL_SIZE = (5, 5)
-CLOSE_ITERATIONS = 2
+CLOSE_KERNEL_SIZE = (3, 3)
+CLOSE_ITERATIONS = 3
 
 # --- Filtragem de Contornos ---
 MIN_CAR_AREA = 2000
-MAX_CAR_AREA = 100000
+MAX_CAR_AREA = 70000
 MIN_ASPECT_RATIO = 0.30
 MAX_ASPECT_RATIO = 4
 
 # --- Interseção Vaga-Carro ---
-MIN_INTERSECTION_AREA_PERCENT_POLY = 0.01
-CAR_ROI_PADDING = 10
+MIN_INTERSECTION_AREA_PERCENT_POLY = 0.02
+CAR_ROI_PADDING = 25
 
 # --- Estabilidade Temporal ---
 CONSECUTIVE_FRAMES_THRESHOLD = 3
