@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # Importa configurações
-from configs import (VIDEO_PATH, PARKING_SPOTS, COLOR_RANGES_HSV,
+from configs import (VIDEO_PATH, PARKING_SPOTS,
                     CANNY_THRESHOLD1, CANNY_THRESHOLD2,
                     GAUSSIAN_BLUR_KERNEL_SIZE, GAUSSIAN_BLUR_SIGMA_X,
                     CLOSE_KERNEL_SIZE, CLOSE_ITERATIONS,

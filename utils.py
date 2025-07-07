@@ -1,72 +1,103 @@
 # utils.py
 import cv2
 import numpy as np
-from configs import COLOR_RANGES_HSV
+# Importa KNOWN_COLORS_BGR e os novos parâmetros de filtro de cor do configs.py
+from configs import KNOWN_COLORS_BGR, S_MIN_FILTER_COLOR_ANALYSIS, V_MIN_FILTER_COLOR_ANALYSIS
 
 def get_car_color(roi):
     """
-    Determina a cor dominante em uma Região de Interesse (ROI) usando o espaço de cor HSV.
+    Determina a cor dominante em uma Região de Interesse (ROI) de um carro.
+    Primeiro, filtra pixels de vidro/sombra. Em seguida, usa K-Means Clustering 
+    e compara a cor dominante com uma paleta de cores BGR conhecidas.
+
     Args:
-        roi (numpy.ndarray): A imagem recortada do carro.
+        roi (numpy.ndarray): A imagem recortada da Região de Interesse (ROI) do carro (em formato BGR).
+
     Returns:
-        str: O nome da cor detectada (ex: "Branco", "Preto", "Azul").
+        str: O nome da cor detectada (ex: "Branco", "Preto", "Azul", "Desconhecida", "N/A").
+             Retorna "N/A" se a ROI for inválida ou muito pequena para processamento.
     """
+    # 1. Validação da ROI de entrada.
     if roi is None or roi.size == 0 or roi.shape[0] < 5 or roi.shape[1] < 5:
         return "N/A"
 
-    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    max_pixels = 0
-    detected_color = "Desconhecida"
+    # 2. Filtrar pixels de vidro/sombra antes do K-Means.
+    # Converte a ROI para HSV para trabalhar com Saturação (S) e Valor (V - Brilho).
+    hsv_roi_filter = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
-    # Itera sobre as faixas de cor predefinidas para encontrar a cor dominante
-    for color_name, (lower_hsv, upper_hsv) in COLOR_RANGES_HSV.items():
-        # print(f"Verificando cor: {color_name} com limites {lower_hsv} - {upper_hsv}") # Manter para debug se quiser ver as faixas sendo testadas
+    # Cria uma máscara para pixels que NÃO SÃO MUITO ESCUROS E NÃO SÃO MUITO DESSATURADOS.
+    # Pixels com S > S_MIN_FILTER_COLOR_ANALYSIS OU V > V_MIN_FILTER_COLOR_ANALYSIS serão mantidos.
+    # Isso significa: "se o pixel tem um pouco de cor OU é razoavelmente brilhante, eu o quero".
+    # Exclui pixels que são muito escuros E muito dessaturados (provavelmente vidro, sombra, pneu).
+    mask_color_filter = cv2.inRange(hsv_roi_filter, 
+                                    np.array([0, S_MIN_FILTER_COLOR_ANALYSIS, V_MIN_FILTER_COLOR_ANALYSIS]),
+                                    np.array([180, 255, 255]))
 
-        # Tratamento especial para o vermelho que tem duas faixas no HSV
-        if color_name == "Vermelho":
-            lower_red1 = np.array(COLOR_RANGES_HSV["Vermelho"][0], dtype=np.uint8)
-            upper_red1 = np.array(COLOR_RANGES_HSV["Vermelho"][1], dtype=np.uint8)
-            mask1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
+    # Aplica a máscara para obter apenas os pixels da "pintura" (ou o que sobrou).
+    filtered_pixels_roi = cv2.bitwise_and(roi, roi, mask=mask_color_filter)
 
-            lower_red2 = np.array(COLOR_RANGES_HSV["Vermelho2"][0], dtype=np.uint8)
-            upper_red2 = np.array(COLOR_RANGES_HSV["Vermelho2"][1], dtype=np.uint8)
-            mask2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
-
-            mask = cv2.bitwise_or(mask1, mask2)
-        elif color_name == "Vermelho2": # Se já tratou o vermelho na primeira parte
-            continue
+    # 3. Lógica de fallback se nenhum pixel "útil" restar após a filtragem.
+    # Verifica se a ROI filtrada está vazia ou se todos os pixels restantes são pretos (0,0,0).
+    if filtered_pixels_roi.size == 0 or cv2.countNonZero(cv2.cvtColor(filtered_pixels_roi, cv2.COLOR_BGR2GRAY)) == 0:
+        # Se não sobraram pixels válidos da pintura, tenta classificar a cor original como Preto/Desconhecida.
+        # Isso é para carros que são REALMENTE pretos, ou que estão totalmente na sombra.
+        avg_value_orig = np.mean(hsv_roi_filter[:,:,2])
+        if avg_value_orig < 60: # Limiar baixo para considerar "Preto"
+            return "Preto"
         else:
-            current_lower_bound = np.array(lower_hsv, dtype=np.uint8)
-            current_upper_bound = np.array(upper_hsv, dtype=np.uint8)
-            mask = cv2.inRange(hsv_roi, current_lower_bound, current_upper_bound)
+            return "Desconhecida" # Se não é preto, mas não tem pixels válidos, é desconhecido.
 
-        num_pixels = cv2.countNonZero(mask)
+    # 4. Preparação dos Dados Filtrados para K-Means.
+    # Redimensiona a ROI filtrada para uma lista de pixels (num_pixels, 3 canais BGR).
+    pixels = filtered_pixels_roi.reshape((-1, 3))
+    # Remove quaisquer pixels (0,0,0) resultantes da máscara que não foram removidos pelo reshape.
+    pixels = pixels[~np.all(pixels == 0, axis=1)] 
 
-        # Se esta cor tem mais pixels que a cor detectada anteriormente, atualiza
-        if num_pixels > max_pixels:
-            max_pixels = num_pixels
-            detected_color = color_name
+    # Última verificação de pixels restantes para K-Means.
+    if pixels.shape[0] == 0:
+        avg_value_orig = np.mean(hsv_roi_filter[:,:,2])
+        if avg_value_orig < 60:
+            return "Preto"
+        else:
+            return "Desconhecida"
 
-    # Heurística para cores neutras (branco, preto, cinza) se NENHUMA cor forte for predominantemente detectada.
-    total_pixels = roi.shape[0] * roi.shape[1]
-    # Reduzi o limiar para 0.15. Se mais de 15% dos pixels do ROI caem em alguma cor vibrante, 
-    # ele NÃO será classificado como cinza/preto/branco pela heurística.
-    if total_pixels > 0 and max_pixels / total_pixels < 0.15: # Ajustado de 0.2 para 0.15
-        avg_value = np.mean(hsv_roi[:,:,2])       # Média do canal Value (luminosidade)
-        avg_saturation = np.mean(hsv_roi[:,:,1]) # Média do canal Saturation
+    pixels = np.float32(pixels) # K-Means espera float32.
 
-        # Este limiar de saturação para cores neutras. Se a saturação é baixa, é neutro.
-        # Aumentei para 40 para ser mais inclusivo com tons dessaturados que parecem cinza.
-        if avg_saturation < 40: # Ajustado de 30 para 40
-            if avg_value < 60:
-                return "Preto"
-            elif avg_value > 190: # Aumentei de 180 para 190 para ser mais rigoroso com o branco puro.
-                return "Branco"
-            else:
-                return "Cinza" # Padrão para saturação baixa e valor intermediário
+    # 5. Execução do K-Means Clustering.
+    # Queremos encontrar a cor mais dominante (k=1).
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
+    k = 1 
 
-    # Corrige a detecção de "Vermelho2" para "Vermelho" no retorno final, se foi a parte detectada
-    if detected_color == "Vermelho2":
-        return "Vermelho"
+    try:
+        _, labels, centers = cv2.kmeans(pixels, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    except cv2.error as e:
+        print(f"Erro no K-Means: {e}. ROI shape: {roi.shape}. Pixels after filter: {pixels.shape}")
+        return "N/A"
 
-    return detected_color
+    # A cor BGR mais dominante é o centro do primeiro (e único) cluster.
+    dominant_bgr = centers[0].astype(np.uint8)
+
+    # DEBUG: Imprimir a cor dominante BGR encontrada pelo K-Means (após filtragem).
+    print(f"DEBUG - Cor Dominante BGR da ROI (Filtrada): {dominant_bgr}") 
+
+    # 6. Comparação da Cor Dominante com a Paleta de Cores Conhecidas.
+    min_distance = float('inf') 
+    detected_color_name = "Desconhecida" 
+
+    for color_name, known_bgr_value in KNOWN_COLORS_BGR.items():
+        known_bgr_array = np.array(known_bgr_value)
+        # Calcula a distância euclidiana entre a cor dominante do carro e cada cor na paleta.
+        distance = np.sqrt(np.sum((dominant_bgr - known_bgr_array)**2))
+
+        if distance < min_distance:
+            min_distance = distance
+            detected_color_name = color_name
+
+    # 7. Classificação Final Baseada na Distância e Limiar de Tolerância.
+    # Este limiar define quão "próxima" a cor dominante do carro precisa estar
+    # de uma cor na sua paleta para não ser classificada como "Desconhecida".
+    # Ajuste este valor em 'configs.py' (não é um parâmetro ainda, mas você pode adicioná-lo).
+    if min_distance > 50: # Se a cor dominante está muito longe de qualquer cor conhecida na sua paleta.
+        return "Desconhecida"
+
+    return detected_color_name
